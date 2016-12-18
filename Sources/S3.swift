@@ -37,6 +37,7 @@ public enum Error: Swift.Error {
     case missingBucketName
     case badStringData
     case missingData
+    case notFound
 }
 
 
@@ -95,7 +96,7 @@ public class S3 {
      - bucketName: Name of the global bucket to be used for calls where bucket is not specified (optional)
      - region: AWS Region, default is .usEast1_Virginia
      */
-    public init(accessKey: String, secretKey: String, bucketName: String?, region: Region = .usEast1_Virginia) {
+    public init(accessKey: String, secretKey: String, bucketName: String?, region: Region = .euWest1) {
         self.bucketName = bucketName
         self.signer = S3SignerAWS(accessKey: accessKey, secretKey: secretKey, region: region)
     }
@@ -108,7 +109,7 @@ public class S3 {
      - secretKey: AWS Secret key
      - region: AWS Region, default is .usEast1_Virginia
      */
-    public convenience init(accessKey: String, secretKey: String, region: Region = .usEast1_Virginia) {
+    public convenience init(accessKey: String, secretKey: String, region: Region = .euWest1) {
         self.init(accessKey: accessKey, secretKey: secretKey, bucketName: nil, region: region)
     }
     
@@ -194,12 +195,18 @@ public class S3 {
      */
     public func get(fileAtPath filePath: String, bucketName: String? = nil) throws -> Data {
         let fileUrl: URL? = try self.buildUrl(bucketName: bucketName, fileName: filePath)
+        
         guard let url = fileUrl else {
             throw Error.invalidUrl
         }
         
         let headers: [String: String] = try signer.authHeaderV4(httpMethod: .get, urlString: url.absoluteString, headers: [:], payload: .none)
         let result: Response = try BasicClient.get(fileUrl!.absoluteString, headers: self.vaporHeaders(headers))
+        
+        if result.status == .notFound {
+            throw Error.notFound
+        }
+        
         guard result.status == .ok else {
             throw Error.badResponse(result)
         }
@@ -207,6 +214,7 @@ public class S3 {
         guard let bytes: Bytes = result.body.bytes else {
             throw Error.missingData
         }
+        
         let data: Data = Data.init(bytes: bytes)
         
         return data
@@ -265,8 +273,7 @@ internal extension S3 {
             throw Error.missingBucketName
         }
         
-        var url: URL = URL(string: "https://s3.amazonaws.com")!
-        url.appendPathComponent(bucket!)
+        var url: URL = URL(string: "https://\(bucket!).s3.amazonaws.com")!
         url.appendPathComponent(fileName)
         return url
     }
